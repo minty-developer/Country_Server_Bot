@@ -57,17 +57,17 @@ class MyClient(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        # 앱 켜질 때 자동 동기화
+        # 자동 동기화
         print("🚀 자동 동기화 시작...")
         try:
-            # 길드 전용 동기화 예시: guild_id = YOUR_GUILD_ID
-            synced = await self.tree.sync()  # 글로벌 동기화
+            synced = await self.tree.sync()
             print(f"✅ 자동 동기화 완료! 등록된 명령어 수: {len(synced)}개")
         except Exception as e:
             print(f"❌ 자동 동기화 실패: {e}")
-
-    async def setup_hook(self):
+    
+        # 나머지 setup 작업
         print("✅ setup_hook 완료 (동기화 필요 시 /동기화 사용)")
+
 
 client = MyClient()
 
