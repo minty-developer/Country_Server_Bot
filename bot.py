@@ -63,12 +63,8 @@ class MyClient(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        print("🚨 setup_hook 시작")
-        try:
-            await self.tree.sync()
-            print("✅ setup_hook 정상 종료")
-        except Exception as e:
-            print("❌ setup_hook 에러:", e)
+        print("✅ setup_hook 통과 (동기화 없음)")
+
 
 client = MyClient()
 
@@ -138,6 +134,32 @@ async def set_money(
         f"변경 후: {새로운재화}원",
         ephemeral=True
     )
+
+# =====================
+# 🔹 /동기화 (관리자 전용)
+# =====================
+@client.tree.command(name="동기화", description="슬래시 명령어 수동 동기화 (관리자 전용)")
+async def sync_commands(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "❌ 관리자만 사용할 수 있는 명령어입니다.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        synced = await client.tree.sync()
+        await interaction.followup.send(
+            f"✅ **동기화 완료**\n등록된 명령어 수: {len(synced)}개",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.followup.send(
+            f"❌ 동기화 실패\n```{e}```",
+            ephemeral=True
+        )
 
 
 # =====================
