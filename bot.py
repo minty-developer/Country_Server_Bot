@@ -57,9 +57,30 @@ class MyClient(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
+        # 앱 켜질 때 자동 동기화
+        print("🚀 자동 동기화 시작...")
+        try:
+            # 길드 전용 동기화 예시: guild_id = YOUR_GUILD_ID
+            synced = await self.tree.sync()  # 글로벌 동기화
+            print(f"✅ 자동 동기화 완료! 등록된 명령어 수: {len(synced)}개")
+        except Exception as e:
+            print(f"❌ 자동 동기화 실패: {e}")
+
+    async def setup_hook(self):
         print("✅ setup_hook 완료 (동기화 필요 시 /동기화 사용)")
 
 client = MyClient()
+
+# =====================
+# 🔹 /법률
+# =====================
+@client.tree.command(name="법률", description="국가 법률 웹사이트 접속")
+async def law(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "📜 국가 법률 웹사이트: [바로가기](https://minty-developer.github.io/Country_server/)",
+        ephemeral=True
+    )
+
 
 # =====================
 # 🔹 /핑
