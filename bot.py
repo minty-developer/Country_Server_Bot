@@ -63,9 +63,12 @@ class MyClient(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        await self.tree.sync()
-        print("✅ 글로벌 슬래시 커맨드 동기화")
-
+        print("🚨 setup_hook 시작")
+        try:
+            await self.tree.sync()
+            print("✅ setup_hook 정상 종료")
+        except Exception as e:
+            print("❌ setup_hook 에러:", e)
 
 client = MyClient()
 
