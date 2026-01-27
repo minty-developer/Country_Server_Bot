@@ -63,10 +63,11 @@ class MyClient(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        guild = discord.Object(id={guild.id})
+        await self.wait_until_ready()
+        guild = self.guilds[0]
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
-        print("✅ 길드 슬래시 커맨드 강제 동기화 완료")
+        print(f"✅ {guild.name} ({guild.id}) 동기화 완료")
 
 client = MyClient()
 
