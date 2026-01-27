@@ -1,36 +1,13 @@
 import discord
 from discord import app_commands
-import os, json, time, datetime
+import os, json, datetime
 
 # =====================
 # 💰 파일
 # =====================
 MONEY_FILE = "money.json"
 SALARY_LOG = "salary_log.json"
-
-# =====================
-# 🏛️ 월급표
-# =====================
-ROLE_SALARY = {
-    "대통령": 6000,
-    "국무총리": 5000,
-
-    "장관": 4000,
-    "차관": 3000,
-    "사원": 2000,
-
-    "국회의장": 3500,
-    "국회의원": 2500,
-
-    "최고재판관": 4500,
-    "판사": 3500,
-    "검사": 3000,
-    "변호인": 2000,
-
-    "경찰": 2500
-}
-
-PUNISH_ROLE = "재재대상"
+SALARY_FILE = "salary.json"  # 역할별 월급 저장용
 
 # =====================
 # 💾 공통 함수
@@ -52,19 +29,35 @@ def add_money(user_id, amount):
     save_json(MONEY_FILE, data)
 
 # =====================
+# 💾 월급 파일
+# =====================
+def load_salary():
+    if not os.path.exists(SALARY_FILE):
+        return {}
+    with open(SALARY_FILE, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_salary():
+    with open(SALARY_FILE, "w", encoding="utf-8") as f:
+        json.dump(ROLE_SALARY, f, ensure_ascii=False, indent=2)
+
+# 처음 실행 시 파일 불러오기
+ROLE_SALARY = load_salary()
+
+# =====================
 # 🤖 클라이언트
 # =====================
+PUNISH_ROLE = "재재대상"
+
 class MyClient(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
         intents.members = True
         super().__init__(intents=intents)
-
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        print("✅ setup_hook 통과 (동기화 없음)")
-
+        print("✅ setup_hook 완료 (동기화 필요 시 /동기화 사용)")
 
 client = MyClient()
 
@@ -84,7 +77,6 @@ async def ping(interaction: discord.Interaction):
 async def money(interaction: discord.Interaction):
     uid = str(interaction.user.id)
     money = load_json(MONEY_FILE).get(uid, 0)
-
     await interaction.response.send_message(
         f"💰 {interaction.user.display_name}님의 재화: {money}원",
         ephemeral=True
@@ -148,7 +140,6 @@ async def sync_commands(interaction: discord.Interaction):
         return
 
     await interaction.response.defer(ephemeral=True)
-
     try:
         synced = await client.tree.sync()
         await interaction.followup.send(
@@ -161,6 +152,52 @@ async def sync_commands(interaction: discord.Interaction):
             ephemeral=True
         )
 
+# =====================
+# 🔹 월급 관리 (관리자 전용)
+# =====================
+# 월급 수정
+@client.tree.command(name="월급수정", description="역할별 월급 수정 (관리자 전용)")
+@app_commands.describe(역할="월급을 수정할 역할 이름", 금액="설정할 월급 금액")
+async def set_salary(interaction: discord.Interaction, 역할: str, 금액: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ 관리자만 사용 가능", ephemeral=True)
+        return
+
+    ROLE_SALARY[역할] = 금액
+    save_salary()
+    await interaction.response.send_message(f"💰 **{역할} 월급 수정 완료**\n새 월급: {금액}원", ephemeral=True)
+
+# 새 역할 월급 설정
+@client.tree.command(name="월급설정", description="새 역할 월급 최초 설정 (관리자 전용)")
+@app_commands.describe(역할="새로 만든 역할 이름", 금액="설정할 월급 금액")
+async def add_role_salary(interaction: discord.Interaction, 역할: str, 금액: int):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ 관리자만 사용 가능", ephemeral=True)
+        return
+
+    if 역할 in ROLE_SALARY:
+        await interaction.response.send_message("⚠️ 이미 존재하는 역할입니다.", ephemeral=True)
+        return
+
+    ROLE_SALARY[역할] = 금액
+    save_salary()
+    await interaction.response.send_message(f"✅ **새 역할 {역할} 월급 설정 완료**\n월급: {금액}원", ephemeral=True)
+
+# 월급 삭제
+@client.tree.command(name="월급삭제", description="역할별 월급 삭제 (관리자 전용)")
+@app_commands.describe(역할="삭제할 역할 이름")
+async def remove_role_salary(interaction: discord.Interaction, 역할: str):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ 관리자만 사용 가능", ephemeral=True)
+        return
+
+    if 역할 not in ROLE_SALARY:
+        await interaction.response.send_message("⚠️ 월급표에 없는 역할입니다.", ephemeral=True)
+        return
+
+    del ROLE_SALARY[역할]
+    save_salary()
+    await interaction.response.send_message(f"🗑️ **{역할} 역할 월급 삭제 완료**", ephemeral=True)
 
 # =====================
 # 🔹 /월급지급 (관리자)
@@ -197,19 +234,18 @@ async def salary(interaction: discord.Interaction):
         if log.get(uid) == today:
             continue
 
-        salary = 0
-
+        salary_amount = 0
         for role, pay in ROLE_SALARY.items():
-            if any(role in r for r in roles):
-                salary = max(salary, pay)
+            if role in roles:
+                salary_amount = max(salary_amount, pay)
 
-        if salary == 0:
+        if salary_amount == 0:
             continue
 
-        add_money(member.id, salary)
+        add_money(member.id, salary_amount)
         log[uid] = today
         지급수 += 1
-        총액 += salary
+        총액 += salary_amount
 
     save_json(SALARY_LOG, log)
 
