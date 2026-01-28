@@ -174,35 +174,43 @@ async def fine_add(interaction: discord.Interaction, 대상: discord.Member, 금
 )
 async def pay_fine(interaction: discord.Interaction):
     member = interaction.user
-
-    if FINE_ROLE not in [r.name for r in member.roles]:
-        return await interaction.response.send_message("❌ 벌금 대상 아님", ephemeral=True)
-
-    fines = load_json(FINE_FILE)
     uid = str(member.id)
 
+    fines = load_json(FINE_FILE)
+
     if uid not in fines:
-        return await interaction.response.send_message("⚠️ 벌금 정보 없음", ephemeral=True)
+        return await interaction.response.send_message(
+            "❌ 납부할 벌금이 없습니다.",
+            ephemeral=True
+        )
 
     fine = fines[uid]
+
     money = load_json(MONEY_FILE)
     cur = money.get(uid, 0)
 
     if cur < fine:
-        return await interaction.response.send_message("❌ 재화 부족", ephemeral=True)
+        return await interaction.response.send_message(
+            "❌ 재화가 부족합니다.",
+            ephemeral=True
+        )
 
+    # 💰 재화 차감
     money[uid] = cur - fine
     save_json(MONEY_FILE, money)
 
+    # 🗑️ 벌금 데이터 삭제
     del fines[uid]
     save_json(FINE_FILE, fines)
 
-    role = discord.utils.get(interaction.guild.roles, name=FINE_ROLE)
-    if role:
-        await member.remove_roles(role)
+    # 🏷️ 벌금 역할 제거 (확실하게)
+    fine_role = discord.utils.get(interaction.guild.roles, name=FINE_ROLE)
+    if fine_role and fine_role in member.roles:
+        await member.remove_roles(fine_role)
 
     await interaction.response.send_message(
-        f"✅ 벌금 {fine}원 납부 완료",
+        f"✅ 벌금 {fine}원 납부 완료!\n"
+        f"🏷️ 벌금대상 역할이 해제되었습니다.",
         ephemeral=True
     )
 
