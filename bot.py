@@ -54,21 +54,21 @@ class MyClient(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        await self.tree.sync()
-        print("✅ 슬래시 명령어 자동 동기화 완료")
+        synced = await self.tree.sync()
+        print(f"✅ 슬래시 명령어 자동 동기화 완료 ({len(synced)}개)")
 
 client = MyClient()
 
 # =====================
 # 🔹 기본 명령어
 # =====================
-@client.tree.command(name="핑")
+@client.tree.command(name="핑", description="봇의 지연 시간을 확인합니다.")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(
         f"🏓 퐁! {round(client.latency * 1000)}ms"
     )
 
-@client.tree.command(name="재화")
+@client.tree.command(name="재화", description="내 현재 재화를 확인합니다.")
 async def my_money(interaction: discord.Interaction):
     data = load_json(MONEY_FILE)
     money = data.get(str(interaction.user.id), 0)
@@ -80,7 +80,10 @@ async def my_money(interaction: discord.Interaction):
 # =====================
 # 🔹 재화 보기 (관리자)
 # =====================
-@client.tree.command(name="재화보기")
+@client.tree.command(
+    name="재화보기",
+    description="다른 유저의 재화를 확인합니다. (관리자 전용)"
+)
 @app_commands.describe(대상="재화를 확인할 유저")
 async def check_money(interaction: discord.Interaction, 대상: discord.Member):
     if not interaction.user.guild_permissions.administrator:
@@ -95,15 +98,23 @@ async def check_money(interaction: discord.Interaction, 대상: discord.Member):
 # =====================
 # 🔹 재화 설정 (관리자)
 # =====================
-@client.tree.command(name="재화설정")
-@app_commands.describe(대상="유저", 금액="금액", 방식="add/sub")
+@client.tree.command(
+    name="재화설정",
+    description="유저의 재화를 지급하거나 차감합니다. (관리자 전용)"
+)
+@app_commands.describe(대상="유저", 금액="금액", 방식="지급 또는 차감")
 @app_commands.choices(
     방식=[
         app_commands.Choice(name="지급", value="add"),
         app_commands.Choice(name="차감", value="sub")
     ]
 )
-async def set_money(interaction: discord.Interaction, 대상: discord.Member, 금액: int, 방식: app_commands.Choice[str]):
+async def set_money(
+    interaction: discord.Interaction,
+    대상: discord.Member,
+    금액: int,
+    방식: app_commands.Choice[str]
+):
     if not interaction.user.guild_permissions.administrator:
         return await interaction.response.send_message("❌ 관리자 전용", ephemeral=True)
 
@@ -122,8 +133,11 @@ async def set_money(interaction: discord.Interaction, 대상: discord.Member, �
 # =====================
 # 🔹 벌금 부과 (관리자)
 # =====================
-@client.tree.command(name="벌금부과")
-@app_commands.describe(대상="유저", 금액="벌금")
+@client.tree.command(
+    name="벌금부과",
+    description="유저에게 벌금을 부과합니다. (관리자 전용)"
+)
+@app_commands.describe(대상="유저", 금액="벌금 금액")
 async def fine_add(interaction: discord.Interaction, 대상: discord.Member, 금액: int):
     if not interaction.user.guild_permissions.administrator:
         return await interaction.response.send_message("❌ 관리자 전용", ephemeral=True)
@@ -137,19 +151,31 @@ async def fine_add(interaction: discord.Interaction, 대상: discord.Member, 금
         await 대상.add_roles(role)
 
     await interaction.response.send_message(
-        f"⚖️ 벌금 {금액}원 부과 완료",
+        f"⚖️ **벌금 부과 완료**\n대상: {대상.display_name}\n금액: {금액}원",
         ephemeral=True
     )
+
+    # 📩 대상 DM 알림
+    try:
+        await 대상.send(
+            f"⚠️ **벌금이 부과되었습니다**\n\n"
+            f"금액: {금액}원\n"
+            f"💡 `/벌금납부` 명령어로 납부할 수 있습니다."
+        )
+    except discord.Forbidden:
+        pass  # DM 차단 시 무시
 
 # =====================
 # 🔹 벌금 납부 (본인)
 # =====================
-@client.tree.command(name="벌금납부")
+@client.tree.command(
+    name="벌금납부",
+    description="부과된 벌금을 납부합니다."
+)
 async def pay_fine(interaction: discord.Interaction):
     member = interaction.user
-    roles = [r.name for r in member.roles]
 
-    if FINE_ROLE not in roles:
+    if FINE_ROLE not in [r.name for r in member.roles]:
         return await interaction.response.send_message("❌ 벌금 대상 아님", ephemeral=True)
 
     fines = load_json(FINE_FILE)
@@ -183,7 +209,10 @@ async def pay_fine(interaction: discord.Interaction):
 # =====================
 # 🔹 월급 지급 (관리자)
 # =====================
-@client.tree.command(name="월급지급")
+@client.tree.command(
+    name="월급지급",
+    description="국가 소속 인원에게 월급을 일괄 지급합니다. (관리자 전용)"
+)
 async def salary(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator:
         return await interaction.response.send_message("❌ 관리자 전용", ephemeral=True)
