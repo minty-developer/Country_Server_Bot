@@ -3,14 +3,18 @@ from discord import app_commands
 import os, json, datetime
 
 # =====================
-# 💰 파일
+# 📁 파일
 # =====================
 MONEY_FILE = "money.json"
+SALARY_FILE = "salary.json"
 SALARY_LOG = "salary_log.json"
-SALARY_FILE = "salary.json"  # 역할별 월급 저장용
+FINE_FILE = "fine.json"
+
+PUNISH_ROLE = "재재대상"
+FINE_ROLE = "벌금대상"
 
 # =====================
-# 💾 공통 함수
+# 💾 공통 JSON 함수
 # =====================
 def load_json(path):
     if not os.path.exists(path):
@@ -22,6 +26,9 @@ def save_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+# =====================
+# 💰 재화
+# =====================
 def add_money(user_id, amount):
     data = load_json(MONEY_FILE)
     uid = str(user_id)
@@ -29,26 +36,16 @@ def add_money(user_id, amount):
     save_json(MONEY_FILE, data)
 
 # =====================
-# 💾 월급 파일
+# 💼 월급
 # =====================
-def load_salary():
-    if not os.path.exists(SALARY_FILE):
-        return {}
-    with open(SALARY_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+ROLE_SALARY = load_json(SALARY_FILE)
 
 def save_salary():
-    with open(SALARY_FILE, "w", encoding="utf-8") as f:
-        json.dump(ROLE_SALARY, f, ensure_ascii=False, indent=2)
-
-# 처음 실행 시 파일 불러오기
-ROLE_SALARY = load_salary()
+    save_json(SALARY_FILE, ROLE_SALARY)
 
 # =====================
 # 🤖 클라이언트
 # =====================
-PUNISH_ROLE = "재재대상"
-
 class MyClient(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
@@ -57,224 +54,162 @@ class MyClient(discord.Client):
         self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
-        # 자동 동기화
-        print("🚀 자동 동기화 시작...")
-        try:
-            synced = await self.tree.sync()
-            print(f"✅ 자동 동기화 완료! 등록된 명령어 수: {len(synced)}개")
-        except Exception as e:
-            print(f"❌ 자동 동기화 실패: {e}")
-    
-        # 나머지 setup 작업
-        print("✅ setup_hook 완료 (동기화 필요 시 /동기화 사용)")
-
+        await self.tree.sync()
+        print("✅ 슬래시 명령어 자동 동기화 완료")
 
 client = MyClient()
 
 # =====================
-# 🔹 /법률
+# 🔹 기본 명령어
 # =====================
-@client.tree.command(name="법률", description="국가 법률 웹사이트 접속")
-async def law(interaction: discord.Interaction):
-    await interaction.response.send_message(
-        "📜 국가 법률 웹사이트: [바로가기](https://minty-developer.github.io/Country_server/)",
-        ephemeral=True
-    )
-
-
-# =====================
-# 🔹 /핑
-# =====================
-@client.tree.command(name="핑", description="봇 상태 확인")
+@client.tree.command(name="핑")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message(
-        f"🏓 퐁!\n지연: {round(client.latency * 1000)}ms"
+        f"🏓 퐁! {round(client.latency * 1000)}ms"
     )
 
-# =====================
-# 🔹 /재화
-# =====================
-@client.tree.command(name="재화", description="내 재화 확인")
-async def money(interaction: discord.Interaction):
-    uid = str(interaction.user.id)
-    money = load_json(MONEY_FILE).get(uid, 0)
+@client.tree.command(name="재화")
+async def my_money(interaction: discord.Interaction):
+    data = load_json(MONEY_FILE)
+    money = data.get(str(interaction.user.id), 0)
     await interaction.response.send_message(
-        f"💰 {interaction.user.display_name}님의 재화: {money}원",
+        f"💰 내 재화: {money}원",
         ephemeral=True
     )
 
-@client.tree.command(name="재화설정", description="유저 재화 수동 조정 (관리자 전용)")
-@app_commands.describe(
-    대상="재화를 조정할 유저",
-    금액="추가 또는 차감할 금액",
-    방식="add = 지급, sub = 차감"
-)
+# =====================
+# 🔹 재화 보기 (관리자)
+# =====================
+@client.tree.command(name="재화보기")
+@app_commands.describe(대상="재화를 확인할 유저")
+async def check_money(interaction: discord.Interaction, 대상: discord.Member):
+    if not interaction.user.guild_permissions.administrator:
+        return await interaction.response.send_message("❌ 관리자 전용", ephemeral=True)
+
+    money = load_json(MONEY_FILE).get(str(대상.id), 0)
+    await interaction.response.send_message(
+        f"💰 {대상.display_name} : {money}원",
+        ephemeral=True
+    )
+
+# =====================
+# 🔹 재화 설정 (관리자)
+# =====================
+@client.tree.command(name="재화설정")
+@app_commands.describe(대상="유저", 금액="금액", 방식="add/sub")
 @app_commands.choices(
     방식=[
         app_commands.Choice(name="지급", value="add"),
         app_commands.Choice(name="차감", value="sub")
     ]
 )
-async def set_money(
-    interaction: discord.Interaction,
-    대상: discord.Member,
-    금액: int,
-    방식: app_commands.Choice[str]
-):
+async def set_money(interaction: discord.Interaction, 대상: discord.Member, 금액: int, 방식: app_commands.Choice[str]):
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ 관리자만 사용할 수 있는 명령어입니다.",
-            ephemeral=True
-        )
-        return
+        return await interaction.response.send_message("❌ 관리자 전용", ephemeral=True)
 
     data = load_json(MONEY_FILE)
     uid = str(대상.id)
-    현재재화 = data.get(uid, 0)
+    cur = data.get(uid, 0)
 
-    if 방식.value == "add":
-        새로운재화 = 현재재화 + 금액
-    else:
-        새로운재화 = max(0, 현재재화 - 금액)
-
-    data[uid] = 새로운재화
+    data[uid] = cur + 금액 if 방식.value == "add" else max(0, cur - 금액)
     save_json(MONEY_FILE, data)
 
     await interaction.response.send_message(
-        f"💰 **재화 조정 완료**\n"
-        f"대상: {대상.display_name}\n"
-        f"이전: {현재재화}원\n"
-        f"변경 후: {새로운재화}원",
+        f"✅ {대상.display_name} 재화 수정 완료",
         ephemeral=True
     )
 
 # =====================
-# 🔹 /동기화 (관리자 전용)
+# 🔹 벌금 부과 (관리자)
 # =====================
-@client.tree.command(name="동기화", description="슬래시 명령어 수동 동기화 (관리자 전용)")
-async def sync_commands(interaction: discord.Interaction):
+@client.tree.command(name="벌금부과")
+@app_commands.describe(대상="유저", 금액="벌금")
+async def fine_add(interaction: discord.Interaction, 대상: discord.Member, 금액: int):
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ 관리자만 사용할 수 있는 명령어입니다.",
-            ephemeral=True
-        )
-        return
+        return await interaction.response.send_message("❌ 관리자 전용", ephemeral=True)
 
-    await interaction.response.defer(ephemeral=True)
-    try:
-        synced = await client.tree.sync()
-        await interaction.followup.send(
-            f"✅ **동기화 완료**\n등록된 명령어 수: {len(synced)}개",
-            ephemeral=True
-        )
-    except Exception as e:
-        await interaction.followup.send(
-            f"❌ 동기화 실패\n```{e}```",
-            ephemeral=True
-        )
+    fines = load_json(FINE_FILE)
+    fines[str(대상.id)] = 금액
+    save_json(FINE_FILE, fines)
+
+    role = discord.utils.get(interaction.guild.roles, name=FINE_ROLE)
+    if role:
+        await 대상.add_roles(role)
+
+    await interaction.response.send_message(
+        f"⚖️ 벌금 {금액}원 부과 완료",
+        ephemeral=True
+    )
 
 # =====================
-# 🔹 월급 관리 (관리자 전용)
+# 🔹 벌금 납부 (본인)
 # =====================
-# 월급 수정
-@client.tree.command(name="월급수정", description="역할별 월급 수정 (관리자 전용)")
-@app_commands.describe(역할="월급을 수정할 역할 이름", 금액="설정할 월급 금액")
-async def set_salary(interaction: discord.Interaction, 역할: str, 금액: int):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ 관리자만 사용 가능", ephemeral=True)
-        return
+@client.tree.command(name="벌금납부")
+async def pay_fine(interaction: discord.Interaction):
+    member = interaction.user
+    roles = [r.name for r in member.roles]
 
-    ROLE_SALARY[역할] = 금액
-    save_salary()
-    await interaction.response.send_message(f"💰 **{역할} 월급 수정 완료**\n새 월급: {금액}원", ephemeral=True)
+    if FINE_ROLE not in roles:
+        return await interaction.response.send_message("❌ 벌금 대상 아님", ephemeral=True)
 
-# 새 역할 월급 설정
-@client.tree.command(name="월급설정", description="새 역할 월급 최초 설정 (관리자 전용)")
-@app_commands.describe(역할="새로 만든 역할 이름", 금액="설정할 월급 금액")
-async def add_role_salary(interaction: discord.Interaction, 역할: str, 금액: int):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ 관리자만 사용 가능", ephemeral=True)
-        return
+    fines = load_json(FINE_FILE)
+    uid = str(member.id)
 
-    if 역할 in ROLE_SALARY:
-        await interaction.response.send_message("⚠️ 이미 존재하는 역할입니다.", ephemeral=True)
-        return
+    if uid not in fines:
+        return await interaction.response.send_message("⚠️ 벌금 정보 없음", ephemeral=True)
 
-    ROLE_SALARY[역할] = 금액
-    save_salary()
-    await interaction.response.send_message(f"✅ **새 역할 {역할} 월급 설정 완료**\n월급: {금액}원", ephemeral=True)
+    fine = fines[uid]
+    money = load_json(MONEY_FILE)
+    cur = money.get(uid, 0)
 
-# 월급 삭제
-@client.tree.command(name="월급삭제", description="역할별 월급 삭제 (관리자 전용)")
-@app_commands.describe(역할="삭제할 역할 이름")
-async def remove_role_salary(interaction: discord.Interaction, 역할: str):
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message("❌ 관리자만 사용 가능", ephemeral=True)
-        return
+    if cur < fine:
+        return await interaction.response.send_message("❌ 재화 부족", ephemeral=True)
 
-    if 역할 not in ROLE_SALARY:
-        await interaction.response.send_message("⚠️ 월급표에 없는 역할입니다.", ephemeral=True)
-        return
+    money[uid] = cur - fine
+    save_json(MONEY_FILE, money)
 
-    del ROLE_SALARY[역할]
-    save_salary()
-    await interaction.response.send_message(f"🗑️ **{역할} 역할 월급 삭제 완료**", ephemeral=True)
+    del fines[uid]
+    save_json(FINE_FILE, fines)
+
+    role = discord.utils.get(interaction.guild.roles, name=FINE_ROLE)
+    if role:
+        await member.remove_roles(role)
+
+    await interaction.response.send_message(
+        f"✅ 벌금 {fine}원 납부 완료",
+        ephemeral=True
+    )
 
 # =====================
-# 🔹 /월급지급 (관리자)
+# 🔹 월급 지급 (관리자)
 # =====================
-@client.tree.command(name="월급지급", description="국가 월급 일괄 지급 (관리자 전용)")
+@client.tree.command(name="월급지급")
 async def salary(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ 관리자만 월급을 지급할 수 있습니다.",
-            ephemeral=True
-        )
-        return
+        return await interaction.response.send_message("❌ 관리자 전용", ephemeral=True)
 
-    guild = interaction.guild
     today = str(datetime.date.today())
     log = load_json(SALARY_LOG)
 
-    지급수 = 0
-    총액 = 0
-
-    for member in guild.members:
-        if member.bot:
+    count = 0
+    for m in interaction.guild.members:
+        if m.bot:
+            continue
+        if PUNISH_ROLE in [r.name for r in m.roles]:
             continue
 
-        roles = [r.name for r in member.roles]
-
-        # 징계 대상 제외
-        if PUNISH_ROLE in roles:
-            continue
-
-        uid = str(member.id)
-
-        # 오늘 이미 지급됨
+        uid = str(m.id)
         if log.get(uid) == today:
             continue
 
-        salary_amount = 0
-        for role, pay in ROLE_SALARY.items():
-            if role in roles:
-                salary_amount = max(salary_amount, pay)
-
-        if salary_amount == 0:
-            continue
-
-        add_money(member.id, salary_amount)
-        log[uid] = today
-        지급수 += 1
-        총액 += salary_amount
+        pay = max([ROLE_SALARY.get(r.name, 0) for r in m.roles], default=0)
+        if pay > 0:
+            add_money(m.id, pay)
+            log[uid] = today
+            count += 1
 
     save_json(SALARY_LOG, log)
-
-    await interaction.response.send_message(
-        f"🏦 **국가 월급 지급 완료**\n"
-        f"지급 인원: {지급수}명\n"
-        f"총 지급액: {총액}원"
-    )
+    await interaction.response.send_message(f"🏦 월급 지급 완료 ({count}명)")
 
 # =====================
 # 🚀 실행
